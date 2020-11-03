@@ -1,3 +1,3 @@
 # ENSC-Design-Lab-14
-Our repository for the motion capture project
+Our repository for the motion capture project. endl;
 DM the IG if you have any questions
