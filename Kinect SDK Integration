@@ -1,0 +1,5 @@
+#include "kinect.h"
+#include <iostream>
+#include <fstream>
+//#include <cmath>
+
