@@ -291,22 +291,3 @@ int main(int argc, char** argv[])
 		outfile.close();
 
 }
-void DrawBone(Mat& SkeletonImage, CvPoint pointSet[], const Joint* pJoints, int whichone, JointType joint0, JointType joint1)
-{
-	TrackingState joint0State = pJoints[joint0].TrackingState;
-	TrackingState joint1State = pJoints[joint1].TrackingState;
-
-	// If we can't find either of these joints, exit
-	if ((joint0State == TrackingState_NotTracked) || (joint1State == TrackingState_NotTracked))
-	{
-		return;
-	}
-
-	// Don't draw if both points are inferred
-	if ((joint0State == TrackingState_Inferred) && (joint1State == TrackingState_Inferred))
-	{
-		return;
-	}
-
-
-	
