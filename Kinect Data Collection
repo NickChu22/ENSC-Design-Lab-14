@@ -1,0 +1,271 @@
+#include <opencv2/opencv.hpp>
+#include <Windows.h>
+#include <Kinect.h>
+#include<iostream>
+#include<time.h>
+#include<math.h>
+
+using namespace std;
+using namespace cv;
+template<class Interface>
+
+static inline void SafeRelease(Interface*& pInterfaceToRelease) //safe way to release COM objects
+{
+	if (pInterfaceToRelease != NULL)
+		pInterfaceToRelease->Release();
+		pInterfaceToRelease = NULL;
+	}
+}
+
+//kinect and CV to draw bodies
+void DrawBone(Mat& SkeletonImage, CvPoint pointSet[], const Joint* pJoints, int whichone, JointType joint0, JointType joint1);
+
+void drawSkeleton(Mat& SkeletonImage, CvPoint pointSet[], const Joint* pJoints, int whichone);
+
+ofstream
+SpineBase, SpineMid, Neck, Head, ShoulderLeft, ElbowLeft, WristLeft, HandTipLeft, ShoulderRight, ElbowRight, WristRight, HandTipRight, HipLeft,
+KneeLeft, AnkleLeft, FootLeft, HipRight, KneeRight, AnkleRight, FootRight, SpineShoulder, HandTipLeft, ThumbLeft, HandTipRight, ThumbRight;
+
+int main(int argc, char** argv[])
+{
+
+	setUseOptimized(true);
+
+	IKinectSensor* Sensor; //get sensor
+	HRESULT hResult = S_OK;
+	hResult = GetDefaultKinectSensor(&Sensor);
+	hResult = Sensor->Open();
+	if (FAILED(hResult)) {
+		std::cerr << "Can't find Kinect Sensor" << std::endl;
+		return -1;
+	}
+
+	IColorFrameSource* pColorSource; //get colour frame source for frame reading
+	hResult = Sensor->get_ColorFrameSource(&pColorSource);
+	if (FAILED(hResult)) {
+		std::cerr << "Cannot get colour frame source" << std::endl;
+		return -1;
+	}
+
+	IBodyFrameSource* pBodySource; //get body frame source for frame reading
+	hResult = Sensor->get_BodyFrameSource(&pBodySource);
+	if (FAILED(hResult)) {
+		std::cerr << "Cannot get body frame source" << std::endl;
+		return -1;
+	}
+
+	IColorFrameReader* pColorReader; //get colour reader
+	hResult = pColorSource->OpenReader(&pColorReader);
+	if (FAILED(hResult)) {
+		std::cerr << "Cannot open colour reader" << std::endl;
+		return -1;
+	}
+
+	IBodyFrameReader* pBodyReader; //get body reader
+	hResult = pBodySource->OpenReader(&pBodyReader);
+	if (FAILED(hResult)) {
+		std::cerr << "Cannot open body frame reader" << std::endl;
+		return -1;
+	}
+
+	IFrameDescription* pDescription; //get frames
+	hResult = pColorSource->get_FrameDescription(&pDescription);
+	if (FAILED(hResult)) {
+		std::cerr << "Cannot get frame description" << std::endl;
+		return -1;
+	}
+//size of window
+	int width = 0;
+	int height = 0;
+	pDescription->get_Width(&width);
+	pDescription->get_Height(&height); 
+	unsigned int bufferSize = width * height * 4 * sizeof(unsigned char);
+
+	//cv buffer
+	cv::Mat bufferMat(height, width, CV_8UC4);
+	cv::Mat bodyMat(height / 2, width / 2, CV_8UC4);
+	cv::namedWindow("Body");
+	//for reference for colours
+	cv::Vec3b color[BODY_COUNT];
+	color[0] = cv::Vec3b(255, 0, 0);
+	color[1] = cv::Vec3b(0, 255, 0);
+	color[2] = cv::Vec3b(0, 0, 255);
+	color[3] = cv::Vec3b(255, 255, 0);
+	color[4] = cv::Vec3b(255, 0, 255);
+	color[5] = cv::Vec3b(0, 255, 255);
+
+
+	float Skeletons[6][25][3];
+	//sdk coordinate mapper
+	ICoordinateMapper* pCoordinateMapper;
+	hResult = Sensor->get_CoordinateMapper(&pCoordinateMapper);
+	if (FAILED(hResult)) {
+		std::cerr << "Error : IKinectSensor::get_CoordinateMapper()" << std::endl;
+		return -1;
+	};
+
+	while (1) {
+		IColorFrame* pColorFrame = nullptr;
+		hResult = pColorReader->AcquireLatestFrame(&pColorFrame);
+		if (SUCCEEDED(hResult)) {
+			hResult = pColorFrame->CopyConvertedFrameDataToArray(bufferSize, reinterpret_cast<BYTE*>(bufferMat.data), ColorImageFormat::ColorImageFormat_Bgra);
+			if (SUCCEEDED(hResult)) {
+				cv::resize(bufferMat, bodyMat, cv::Size(), 0.5, 0.5);
+			}
+
+		}
+		//get body frame reader
+		IBodyFrame* pBodyFrame = nullptr;
+		hResult = pBodyReader->AcquireLatestFrame(&pBodyFrame); //asks to access latest frame
+		if (SUCCEEDED(hResult)) {
+			IBody* pBody[BODY_COUNT] = { 0 };
+			hResult = pBodyFrame->GetAndRefreshBodyData(BODY_COUNT, pBody); //refresh using latest frame
+
+			if (SUCCEEDED(hResult))
+			{
+				for (int count = 0; count < BODY_COUNT; count++)
+				{
+					BOOLEAN bTracked = false;
+					hResult = pBody[count]->get_IsTracked(&bTracked); 
+					if (SUCCEEDED(hResult) && bTracked) //only continues if tracked
+					{
+
+						Joint joint[JointType::JointType_Count]; //initializes joint
+
+
+						JointOrientation aOrientations[JointType::JointType_Count];
+
+							hResult = pBody[count]->GetJoints(JointType::JointType_Count, joint);
+						if (pBody[count]->GetJointOrientations(JointType::JointType_Count, aOrientations) != S_OK)
+						{
+							cerr << "Couldn't get joints" << endl;
+						}
+
+						if (SUCCEEDED(hResult)) //initializes variables for hand state for left hand
+						{
+							HandState leftHandState = HandState::HandState_Unknown;
+							hResult = pBody[count]->get_HandLeftState(&leftHandState);
+							if (SUCCEEDED(hResult)) {
+								ColorSpacePoint colorSpacePoint = { 0 };
+								hResult = pCoordinateMapper->MapCameraPointToColorSpace(joint[JointType::JointType_HandLeft].Position, &colorSpacePoint); //aligns body to colour space
+								if (SUCCEEDED(hResult)) {
+									int x = static_cast<int>(colorSpacePoint.X);
+									int y = static_cast<int>(colorSpacePoint.Y);
+
+
+									if ((x >= 0) && (x < width) && (y >= 0) && (y < height)) { //colour + shapes
+										if (leftHandState == HandState::HandState_Open) {
+											cv::circle(bufferMat, cv::Point(x, y), 75, cv::Scalar(0, 128, 0), 5, CV_AA);
+										}
+										else if (leftHandState == HandState::HandState_Closed) {
+											cv::circle(bufferMat, cv::Point(x, y), 75, cv::Scalar(0, 0, 128), 5, CV_AA);
+										}
+										else if (leftHandState == HandState::HandState_Lasso) {
+											cv::circle(bufferMat, cv::Point(x, y), 75, cv::Scalar(128, 128, 0), 5, CV_AA);
+										}
+									}
+								}
+							}
+
+							HandState rightHandState = HandState::HandState_Unknown; //initializes variables for hand state for right hand, and gives it colours 
+							{
+							ColorSpacePoint colorSpacePoint = { 0 };
+							hResult = pBody[count]->get_HandRightState(&rightHandState);
+							if (SUCCEEDED(hResult)) {
+								hResult = pCoordinateMapper->MapCameraPointToColorSpace(joint[JointType::JointType_HandRight].Position, &colorSpacePoint); //aligns body to colour space
+								if (SUCCEEDED(hResult)) {
+									int x = static_cast<int>(colorSpacePoint.X);
+									int y = static_cast<int>(colorSpacePoint.Y);
+
+									if ((x >= 0) && (x < width) && (y >= 0) && (y < height)) { // colour + shapes
+										if (rightHandState == HandState::HandState_Open) {
+											cv::circle(bufferMat, cv::Point(x, y), 75, cv::Scalar(0, 128, 0), 5, CV_AA);
+										}
+										else if (rightHandState == HandState::HandState_Closed) {
+											cv::circle(bufferMat, cv::Point(x, y), 75, cv::Scalar(0, 0, 128), 5, CV_AA);
+
+										}
+										else if (rightHandState == HandState::HandState_Lasso) {
+											cv::circle(bufferMat, cv::Point(x, y), 75, cv::Scalar(128, 128, 0), 5, CV_AA);
+										}
+									}
+								}
+							} //for drawing joints using open cv
+							CvPoint skeletonPoint[BODY_COUNT][JointType_Count] = { cvPoint(0,0) };
+							for (int type = 0; type < JointType::JointType_Count; type++) {
+								ColorSpacePoint colorSpacePoint = { 0 };
+								pCoordinateMapper->MapCameraPointToColorSpace(joint[type].Position, &colorSpacePoint);
+								int x = static_cast<int>(colorSpacePoint.X);
+								int y = static_cast<int>(colorSpacePoint.Y);
+								skeletonPoint[count][type].x = x;
+								skeletonPoint[count][type].y = y;
+								if ((x >= 0) && (x < width) && (y >= 0) && (y < height)) {
+									cv::circle(bufferMat, cv::Point(x, y), 5, static_cast<cv::Scalar>(color[count]), -1, CV_AA);
+								}
+							}
+							//WIP file data output to file, finish tomorrow
+							bool Ready = 0;
+							double Init = 0;
+							//if in position, bool ready = true
+							if (HandState == HandState_Lasso) && (Head.Z == 2.191809654 && ((Head.X > 0.1000) && (Head.X < 0.2000)))) {
+								bool Ready = true;
+								double Init = LeftFoot.X;
+							}
+							if (Ready == true && ((RightFoot.X > 0.2100) || LeftFoot.X > 0.2100)) {
+								while (((Init - 0.005 < LeftFoot.X) || (Init - 0.005 < LeftFoot.X)) && (LeftFoot.X < 0.9400) 
+								{
+
+								int S = 0;
+								for (int i = 0; i < 25; i++)
+								{
+									Skeleons[count][i][0] = joint[i].Position.X; //jumbled mess, but should work
+									Skeletons[count][i][1] = joint[i].Position.Y;
+									Skeletons[count][i][2] = joint[i].Position.Z;
+									FootLeft << count << joint[15].Position.X << endl << joint[15].Position.Y << endl << joint[15].Position.Z << endl;
+									FootRight << count << joint[19].Position.X << endl << joint[19].Position.Y << endl << joint[19].Position.Z << endl;
+									Head << count << joint[3].Position.X << endl << joint[3].Position.Y << endl << joint[3].Position.Z << endl;
+									KneeLeft << joint[13].Position.X << endl << joint[13].Position.Y << endl << joint[13].Position.Z << endl;
+									KneeRight << joint[17].Position.X << endl << joint[17].Position.Y << endl << joint[17].Position.Z << endl;
+									HipLeft << joint[12].Position.X << endl << joint[12].Position.Y << endl << joint[12].Position.Z << endl;
+									HipRight << joint[16].Position.X << endl << joint[16].Position.Y << endl << joint[16].Position.Z << endl;
+									ShoulderRight << joint[16].Position.X << endl << joint[16].Position.Y << endl << joint[16].Position.Z << endl;
+									ShoulderLeft << joint[16].Position.X << endl << joint[16].Position.Y << endl << joint[16].Position.Z << endl;
+
+									}
+								}
+
+
+								drawSkeleton(bufferMat, skeletonPoint[count], joint, count);
+							}
+					}
+				}
+				cv::resize(bufferMat, bodyMat, cv::Size(), 0.5, 0.5);
+			}
+			for (int count = 0; count < BODY_COUNT; count++) {
+				SafeRelease(pBody[count]);
+			}
+		}
+		SafeRelease(pColorFrame);
+		SafeRelease(pBodyFrame);
+
+		waitKey(1);
+		cv::imshow("Body", bodyMat);
+
+	}
+	SafeRelease(pColorSource); //release everything
+	SafeRelease(pColorReader);
+	SafeRelease(pDescription);
+	SafeRelease(pBodySource);
+	SafeRelease(pBodyReader);
+
+	SafeRelease(pDescription);
+	SafeRelease(pCoordinateMapper);
+
+	if (Sensor) {
+		Sensor->Close();
+	}
+	SafeRelease(Sensor);
+
+	return 0;
+
+}
