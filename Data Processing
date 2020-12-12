@@ -1,0 +1,381 @@
+#include <cmath>
+#include <iostream>
+#include <vector>
+#include<fstream>
+#include<sstream>
+#include <string>
+
+using namespace std;
+
+// declaring the functions
+double txt_array(string jointloc_file);
+int countSteps(double* (foot_joint), int cols);
+int findFirst(double* (joint), int rows, int cols);
+double FindGroundContactTime(double* (foot_joint), int cols);
+double angle_slouching_calculation(double lowerBack_location[], double upperBack_location[]);
+
+
+// text to array
+// This function takes the txt file from each joint and sorts it into a 2D array where each row is the x, then y, the z locations. 
+// Each column represents a frame.
+
+double txt_array(string jointloc_file)
+{
+	ifstream jointlocation_file;
+	jointlocation_file.open(jointloc_file);
+	string str;
+	vector < vector<double>> jointlocation;
+
+	while (getline(jointlocation_file, str))
+	{
+		istringstream input(str);
+		vector<double> tmp;
+		int a;
+		while (input >> a)
+		{
+			tmp.push_back(a);
+		}
+		jointlocation.push_back(tmp);
+	}
+
+	for (size_t i = 0; i < jointlocation.size(); ++i)
+	{
+		for (size_t j = 0; j < jointlocation[i].size(); ++j)
+		{
+			return jointlocation[i][j];
+		}
+	}
+	return jointlocation[3][80];
+}
+
+// step counting
+// This function counts the number of steps per leg that the user takes in a walk. Works by searching for subsequent similar values in foot arrays, 
+// to see when the foot isn’t moving. This is considered a step.
+
+int countSteps(double* (foot_joint), int cols)
+{
+	//initialize variables
+	int count = 0;
+	double* value = NULL;
+	int tracking = 0;
+	double* first = NULL;
+	double** pointer = &foot_joint;
+	//Don’t need this line double[][] foot_joint = [3][n]; //only 3 rows because only X, Y, and Z components
+	//assuming row X positions is row 0
+	//assuming constant X position for the foot joint array means a "step"
+	//so will keep the row constant
+
+	for (int i = 0; i < cols; i++)
+	{
+		value = &pointer[0][i];
+		if ((value == &pointer[0][i - 1]) && (first == 0)) {
+			first = &pointer[0][i - 1];
+			tracking += 1;
+		}
+		if ((value != &pointer[0][i - 1]) && (tracking != 0)) {
+			first = 0;
+			count += 1;
+			tracking = 0;
+		}
+
+	}
+	return count;
+}
+
+// finding the first step
+// This function is used to determine comparison frames. 
+// It looks for the index value of the array for when a foot first touches the ground. 
+// This index value is used when calculating slouching and step distance.
+
+int findFirst(double* (joint), int rows, int cols)
+{
+	double val = 0.0;
+	double* ptr = NULL;
+
+	double** point = &joint;
+
+	int a = 0;
+	for (int i = 0; i < cols; i++) {
+		ptr = &point[0][i];
+		if (i - 1 > 0) {
+			if (ptr = &point[0][i - 1]) {
+				a = i;
+				break;
+			}
+		}
+	}
+	return a;
+}
+
+
+// finding contact time
+// This function is called for both feet in the limping and standard case. 
+// It finds the amount of time that each foot is on the ground, and is later used to determine limping.
+
+double FindGroundContactTime(double* (foot_joint), int cols)
+{
+
+	double* val = NULL;
+	int track = 0;
+	double* first = NULL;
+	double** point = &foot_joint;
+	double time;
+	for (int i = 0; i < cols; i++)
+	{
+		val = &point[0][i];
+		if ((val == &point[0][i - 1]) && (i - 1 > 0)) {
+			// first = &point[0][i - 1];
+			track += 1;
+		}
+		time = track * (1 / 30); //time in seconds
+
+	}
+	return time;
+}
+
+
+// slouching angle calculation
+// this function takes the location of the hips and center shoulders of the test case, and compares to the location of the center shoulders of the standard.
+// this is done utilizing the dot product, the locations are treated as 3D vectors, and normalized.
+// the normalized locations of the test case mid shoulders and normal case mid shoulders are inputed to the dot product.
+// that result is then used to calculate the angle using arccos function.
+// the angle outputted it converted to degrees from radians.
+
+double angle_slouching_calculation(double lowerBack_location[], double upperBack_location[])
+{
+	// initializing variables
+	double angle_slouch;
+	// what is used to calculate the angle between 2 position vectors
+	double normalized_dot_product;
+	// magnitude of position vectors
+	double length1;
+	double length2;
+
+	// initializing lowerback location
+	double x1 = lowerBack_location[0];
+	double y1 = lowerBack_location[1];
+	double z1 = lowerBack_location[2];
+	double normalized_limbloc_x1;
+	double normalized_limbloc_y1;
+	double normalized_limbloc_z1;
+	// initializing upper location
+	double x2 = upperBack_location[0];
+	double y2 = upperBack_location[1];
+	double z2 = upperBack_location[2];
+	double normalized_limbloc_x2;
+	double normalized_limbloc_y2;
+	double normalized_limbloc_z2;
+	// creating the "normal" upperback location
+	double x3 = lowerBack_location[0];
+	double y3 = upperBack_location[1];
+	double z3 = lowerBack_location[2];
+
+	// finding the positions of the slouching upper back & "normal" upper back relative to the hips
+	double x3_rel = x3 - x1;
+	double y3_rel = y3 - y1;
+	double z3_rel = z3 - z1;
+	double x2_rel = x2 - x1;
+	double y2_rel = y2 - y1;
+	double z2_rel = z2 - z1;
+
+  // finding the magnitude of the 3D "vectors"
+	length1 = sqrt(pow(x3_rel, 2) + pow(y3_rel, 2) + pow(z3_rel, 2));
+	length2 = sqrt(pow(x2_rel, 2) + pow(y2_rel, 2) + pow(z2_rel, 2));
+  
+  // normalizing the 3D "vectors"
+	normalized_limbloc_x1 = x3_rel / length1;
+	normalized_limbloc_y1 = y3_rel / length1;
+	normalized_limbloc_z1 = z3_rel / length1;
+
+	normalized_limbloc_x2 = x2_rel / length2;
+	normalized_limbloc_y2 = y2_rel / length2;
+	normalized_limbloc_z2 = z2_rel / length2;
+  
+  // taking the dot product of the normalized 3D 'vectors'
+	normalized_dot_product = (normalized_limbloc_x1 * normalized_limbloc_x2 + normalized_limbloc_y1 * normalized_limbloc_y2 + normalized_limbloc_z1 * normalized_limbloc_z2);
+  // finding the angle between the 2 vectors
+	angle_slouch = acos(normalized_dot_product) * (180 / 3.14159);
+
+	return angle_slouch;
+}
+
+
+// the main program
+int main()
+{
+	// combining data into single txt file
+	// left foot limping
+	ifstream LeftfootlimpY;
+	LeftfootlimpY.open("Leftfoot_Ylimp.txt");
+	string line = "";
+	getline(LeftfootlimpY, line);
+	ofstream LeftfootlimpX;
+	LeftfootlimpX.open("Leftfoot_Xlimp.txt");
+	LeftfootlimpX << line << endl;
+	// right foot limping
+	ifstream RightfootlimpY;
+	RightfootlimpY.open("Rightfoot_Ylimp.txt");
+	getline(RightfootlimpY, line);
+	ofstream RightfootXlimp;
+	RightfootXlimp.open("Rightfoot_Xlimp.txt");
+	RightfootXlimp << line << endl;
+	// neck slouching
+	ifstream NeckSlouchingY;
+	NeckSlouchingY.open("Neck_Yslouch.txt");
+	getline(NeckSlouchingY, line);
+	ofstream NeckSlouchingX;
+	NeckSlouchingX.open("Neck_Xslouch.txt");
+	NeckSlouchingX << line << endl;
+	// hips
+	ifstream HipsY;
+	HipsY.open("Centerhip_Y.txt");
+	getline(HipsY, line);
+	ofstream HipsZ;
+	HipsZ.open("Centerhip_Z.txt");
+	HipsZ << line << endl;
+	ifstream HipsZ2;
+	HipsZ2.open("Centerhip_Z.txt");
+	getline(HipsZ2, line);
+	getline(HipsZ2, line);
+	ofstream HipsX;
+	HipsX.open("Centerhip_X.txt");
+	HipsX << line << endl;
+
+	// putting txt files into arrays using the txt-array function
+	int row = 3;
+	int column = 120;
+	double Rightfootnormal = txt_array("RightFoot_normal.txt");
+	double* ptrRightfootnormal = &Rightfootnormal;
+	double Leftfootnormal = txt_array("LeftFoot_normal.txt");
+	double* ptrLeftfootnormal = &Leftfootnormal;
+	double Rightfootlimp = txt_array("Rightfoot_Xlimp.txt");
+	double* ptrRightfootlimp = &Rightfootlimp;
+	double Leftfootlimp = txt_array("Leftfoot_Xlimp.txt");
+	double* ptrLeftfootlimp = &Leftfootlimp;
+	double Neckslouching = txt_array("Neck_Xslouch");
+	double* ptrNeckslouching = &Neckslouching;
+	double Hips = txt_array("Centrehip_x.txt");
+	double* ptrHips = &Hips;
+
+	// dragging your feet first
+  // dragging feet is determiend suing the Y (height) locations of each foot. If the Y location of the feet is unchanged throughout the walk,feet drag is detected.
+  
+	for (int i = 0; i < column; i++)
+	{
+    // the first step is found for the normal and limping case
+		int stepLeftnromal = findFirst(&(Leftfootnormal), row, column);
+		int stepRightnormal = findFirst(&(Rightfootnormal), row, column);
+		int stepRightlimp = findFirst(&(Rightfootlimp), row, column);
+		int stepLeftlimp = findFirst(&(Leftfootlimp), row, column);
+
+		// if dragging your feet = false, then continue;
+		// if dragging your feet = true, stop & cout "you are dragging feet, refer to demo video & try again";
+		if (((&ptrRightfootlimp)[i][stepRightlimp] < (&ptrLeftfootlimp)[i][stepLeftlimp] + 0.05) && ((&ptrLeftfootlimp)[i][stepLeftlimp] > (&ptrRightfootlimp)[i][stepRightlimp] - 0.05))
+		{
+			cout << "You are dragging your feet, refer to the demo video and try again." << endl;
+			return 0;
+		}
+		else
+		{
+			// determine hopping
+      // if the Y (height) location of one foot is significantly higher thoughout the walk continuously, then hopping is detected
+			for (i = 0; i < column; i++)
+			{
+				// if hopping = false, then continue;
+				// if hopping = true, cout "you are hoping, refer to demo video & try again";
+				if ((&ptrLeftfootlimp)[i][stepLeftlimp] > (&ptrRightfootlimp)[i][stepRightlimp] + 0.18)
+				{
+					cout << "You are hopping, refer to the demo video and try again.";
+					return 0;
+				}
+				else
+				{
+					// step counter
+					// counting right foot for limping
+					int Rightfootstep = countSteps((&Rightfootlimp), column);
+          // counting left foot for limping
+					int Leftfootstep = countSteps((&Leftfootlimp), column);
+					cout << "You took " << Rightfootstep << " on your right leg, and " <<
+						Leftfootstep << " on your left leg." << endl;
+
+					// limping
+					// calling contact time
+          
+          // step contact time for right foot
+					double Rightfoottime = FindGroundContactTime((&Rightfootlimp), column);
+          // step contact time for left foot
+					double Leftfoottime = FindGroundContactTime((&Leftfootlimp), column);
+					int frames_12 = column * 12 / 80;
+          
+					for (int i = 0; i < stepLeftlimp; i++)
+					{
+            // if contact time for right foot less than left foot = limp on right foot
+						if (Rightfoottime > Leftfoottime + frames_12)
+						{
+							cout << "You are limping on your right foot" << endl;
+						}
+            // if contact time for left foot less than right foot = limping on left foot
+						else if (Leftfoottime > Rightfoottime + frames_12)
+						{
+							cout << "You are limping on your left foot" << endl;
+						}
+						else
+						{
+							cout << "You are not limping" << endl;
+						}
+					}
+					// slouching
+          // This function calculates if the user is slouching by looking at the neck and hips positional data at comparison frames. 
+          // If the head is a certain distance in front of the hip, then they are slouching forward. 
+          // If the head is a certain distance behind of the hip, then they are slouching backwards.
+          
+					for (int i = 0; i < stepLeftlimp; i++)
+					{
+            // checking if slouching forward
+						if ((&ptrNeckslouching)[0][stepLeftlimp] > (&ptrHips)[0][stepLeftlimp] + 0.200)
+						{
+							double slouch_angle = angle_slouching_calculation(&ptrHips[stepLeftlimp], &ptrNeckslouching[stepLeftlimp]);
+							cout << "You are slouching forward. "
+								<< "The angle at which you’re slouching is " << slouch_angle << " degrees. " << endl;
+						}
+            // checking if slouching backward
+						else if ((&ptrNeckslouching)[0][stepLeftlimp] < (&ptrHips)[0][stepLeftlimp] - 0.200)
+						{
+							double slouch_angle = angle_slouching_calculation(&ptrHips[stepLeftlimp], &ptrNeckslouching[stepLeftlimp]);
+							cout << "You are slouching backward "
+								<< "The angle at which you’re slouching is " << slouch_angle << " degrees. " << endl;
+						}
+            // not slouching
+						else
+						{
+							cout << "You are not slouching." << endl;
+						}
+
+					}
+					// step distance.
+          // This function calculates the difference in position of each foot during each comparison frame for the standard and comparison frame. 
+          // This difference then uses an inequality to determine if the user took larger or smaller steps.
+          
+					for (int i = 0; i < stepLeftlimp; i++)
+					{
+            // checking if limping test case steps are larger than normal test case
+						if (abs((&ptrLeftfootlimp)[0][stepLeftlimp] - (&ptrRightfootlimp)[0][stepRightlimp]) > abs((&ptrLeftfootnormal)[0][stepRightnormal] - (&ptrRightfootnormal)[0][stepRightnormal]))
+						{
+							cout << "You took larger steps this time." << endl;
+						}
+            // checking if limping test case steps are smaller than normal test case
+						else if (abs((&ptrLeftfootlimp)[0][stepLeftlimp] - (&ptrRightfootlimp)[0][stepRightlimp]) < abs((&ptrLeftfootnormal)[0][stepLeftnromal] - (&ptrRightfootnormal)[0][stepRightnormal]))
+						{
+							cout << "You tooksmaller steps this time." << endl;
+						}
+            // same step distance
+						else
+						{
+							cout << "You took normal steps this time" << endl;
+						}
+					}
+				}
+			}
+		}
+	}
+}
